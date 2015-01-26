@@ -1,0 +1,95 @@
+Peer Assignment for Practical Machine Learning
+==============================================
+
+The purpose of this assignment is to gain some basic experience with machine learning algorithms in R, by predicting the type of movement being made by a number of experiment participants.
+
+From the assignment writeup:
+> Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+So, let us begin...
+
+*Load necessary packages...*
+```{r}
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+
+set.seed(1337)
+```
+
+Step 0: Visual Inspection of the dataset
+----------------------------------------
+Downloading and inspecting the datasets before pulling them into R, I noticed there are a number of odd values: standard NAs and blank spaces, but also what appear to be Excel "divide by 0" labels. Moreover, the first several columns are largely metadata: row IDs, participant names, dates, times, etc.
+
+
+Step 1: Load the data
+---------------------
+
+```{r}
+# Read in data, changing all missing or null values to NA
+pmlTrain <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+pmlEval <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!", ""))
+```
+
+Step 2: Pre-process the data
+----------------------------
+
+```{r}
+# Drop the first 7 columns, which contain meta (e.g., row ID, participant name) and unknown data (e.g., `new_window`?)
+pmlTrain <- pmlTrain[, -(1:7)]
+pmlEval <- pmlEval[, -(1:7)]
+```
+
+```{r}
+# remove any columns which contain only NAs
+goodCols <- apply(pmlTrain, 2, function(x) !any(is.na(x)))
+tempTrain <- pmlTrain[, goodCols]
+tempEval <- pmlEval[, goodCols]
+```
+
+Step 3: Partition the data into training and testing datasets
+-------------------------------------------------------------
+For this, I used a 75-25% split. More data for my algorithm to build on, and a modest amount to test against.
+
+```{r}
+inTrain <- createDataPartition(y = tempTrain$classe, p = .75, list = FALSE)
+
+training <- tempTrain[inTrain, ]
+testing <- tempTrain[-inTrain, ]
+```
+
+Step 4: Train a Random Forest model
+-----------------------------------
+The basic random forest is a good unsupervised method, and does a decent, brute-force job of building a predictive model, good qualities for a simple 1-2 page analysis here. Leveraging my multi-core processor, I build 500 forests across 2 cores, to save run time.
+
+```{r}
+registerDoParallel()
+
+# Split the `training` data into two sets: the outcome of interest (the known class of motion), and the sensor data
+outcomes <- training$classe
+factors <- training[-ncol(training)]
+
+rf <- foreach(ntree = rep(250, 2), .combine = randomForest::combine, .packages = 'randomForest') %dopar% {
+  randomForest(factors, outcomes, ntree = ntree) 
+}
+```
+
+Step 5: Evaluate the model
+--------------------------
+I check the model against the `training` sub-dataset I built it on:
+
+```{r}
+predictions <- predict(rf, newdata = training)
+confusionMatrix(predictions, outcomes)
+```
+
+Not surprisingly, it fits the data perfectly (something that should give us pause to consider overfitting).
+
+And finally, I check the model against the held-out `testing` sub-dataset:
+```{r}
+predictions <- predict(rf, newdata = testing)
+confusionMatrix(predictions, testing$classe)
+```
+
+Results are near perfect (Accuracy of 0.9955, giving an incredibly high upper bound to our out-of-sample error rate), something which, again, may warrant a note about its applicability to future data, given the potential for overfitting (i.e., would this apply to a different group of participants?). Nevertheless, for a quick introduction to predictive modeling, it shows the effectiveness of a popular algorithm, and how to execute it in R.
