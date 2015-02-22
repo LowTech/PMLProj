@@ -8,13 +8,11 @@ From the assignment writeup:
 
 So, let us begin...
 
-*Load necessary packages...*
-```{r}
+```{r, echo=FALSE}
+# Load necessary packages
 library(caret)
-library(randomForest)
-library(foreach)
-library(doParallel)
 
+# Set the random number generator seed
 set.seed(1337)
 ```
 
@@ -36,13 +34,13 @@ Step 2: Pre-process the data
 ----------------------------
 
 ```{r}
-# Drop the first 7 columns, which contain meta (e.g., row ID, participant name) and unknown data (e.g., `new_window`?)
+# Drop the first 7 columns, which contain metadata (e.g., row ID, participant name) and unknown data (e.g., `new_window`?)
 pmlTrain <- pmlTrain[, -(1:7)]
 pmlEval <- pmlEval[, -(1:7)]
 ```
 
 ```{r}
-# remove any columns which contain only NAs
+# remove columns which contain only NAs
 goodCols <- apply(pmlTrain, 2, function(x) !any(is.na(x)))
 tempTrain <- pmlTrain[, goodCols]
 tempEval <- pmlEval[, goodCols]
@@ -50,7 +48,7 @@ tempEval <- pmlEval[, goodCols]
 
 Step 3: Partition the data into training and testing datasets
 -------------------------------------------------------------
-For this, I used a 75-25% split. More data for my algorithm to build on, and a modest amount to test against.
+For this, I used a 75/25% split. More data for my algorithm to build on, and a modest amount to test against.
 
 ```{r}
 inTrain <- createDataPartition(y = tempTrain$classe, p = .75, list = FALSE)
@@ -61,18 +59,16 @@ testing <- tempTrain[-inTrain, ]
 
 Step 4: Train a Random Forest model
 -----------------------------------
-The basic random forest is a good unsupervised method, and does a decent, brute-force job of building a predictive model, good qualities for a simple 1-2 page analysis here. Leveraging my multi-core processor, I build 500 forests across 2 cores, to save run time.
+I train the model, leaving standard defaults for the train() method from the `caret` package--random forest, bootstrapped (25 resamples)--to let it take care of cross-validation on its own.
+
+*(This definitely seems like overkill, and the time it takes to execute appears to show that: ~1.5 hours on a 2013 MacBook Pro. Parallelizing the process may cut times dramatically.)*
 
 ```{r}
-registerDoParallel()
-
 # Split the `training` data into two sets: the outcome of interest (the known class of motion), and the sensor data
 outcomes <- training$classe
 factors <- training[-ncol(training)]
 
-rf <- foreach(ntree = rep(250, 2), .combine = randomForest::combine, .packages = 'randomForest') %dopar% {
-  randomForest(factors, outcomes, ntree = ntree) 
-}
+rf <- train(factors, outcomes)
 ```
 
 Step 5: Evaluate the model
@@ -84,7 +80,7 @@ predictions <- predict(rf, newdata = training)
 confusionMatrix(predictions, outcomes)
 ```
 
-Not surprisingly, it fits the data perfectly (something that should give us pause to consider overfitting).
+Not surprisingly, with so many opportunities to optimize the model parameters on the training set, the model fits the data perfectly. Saying perfection is an optimistic upper end of the out-of-sample error rate would be putting it mildly.
 
 And finally, I check the model against the held-out `testing` sub-dataset:
 ```{r}
@@ -92,4 +88,4 @@ predictions <- predict(rf, newdata = testing)
 confusionMatrix(predictions, testing$classe)
 ```
 
-Results are near perfect (Accuracy of 0.9955, giving an incredibly high upper bound to our out-of-sample error rate), something which, again, may warrant a note about its applicability to future data, given the potential for overfitting (i.e., would this apply to a different group of participants?). Nevertheless, for a quick introduction to predictive modeling, it shows the effectiveness of a popular algorithm, and how to execute it in R.
+This time, results are merely *near* perfect (Accuracy of 0.994, giving a still incredibly high upper bound for an out-of-sample error rate), something which, again, may warrant a note about its applicability to future data, given the likelihood of overfitting (i.e., would this apply to a different group of participants?). Nevertheless, for a quick introduction to predictive modeling, it shows the effectiveness of a popular algorithm, and how to execute it in R.

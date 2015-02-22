@@ -57,18 +57,8 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 <p>The purpose of this assignment is to gain some basic experience with machine learning algorithms in R, by predicting the type of movement being made by a number of experiment participants.</p>
 <p>From the assignment writeup: &gt; Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <a href="http://groupware.les.inf.puc-rio.br/har">http://groupware.les.inf.puc-rio.br/har</a> (see the section on the Weight Lifting Exercise Dataset).</p>
 <p>So, let us begin…</p>
-<p><em>Load necessary packages…</em></p>
-<pre class="r"><code>library(caret)</code></pre>
 <pre><code>## Loading required package: lattice
 ## Loading required package: ggplot2</code></pre>
-<pre class="r"><code>library(randomForest)</code></pre>
-<pre><code>## randomForest 4.6-10
-## Type rfNews() to see new features/changes/bug fixes.</code></pre>
-<pre class="r"><code>library(foreach)
-library(doParallel)</code></pre>
-<pre><code>## Loading required package: iterators
-## Loading required package: parallel</code></pre>
-<pre class="r"><code>set.seed(1337)</code></pre>
 <div id="step-0-visual-inspection-of-the-dataset" class="section level2">
 <h2>Step 0: Visual Inspection of the dataset</h2>
 <p>Downloading and inspecting the datasets before pulling them into R, I noticed there are a number of odd values: standard NAs and blank spaces, but also what appear to be Excel “divide by 0” labels. Moreover, the first several columns are largely metadata: row IDs, participant names, dates, times, etc.</p>
@@ -81,17 +71,17 @@ pmlEval &lt;- read.csv(&quot;pml-testing.csv&quot;, na.strings=c(&quot;NA&quot;,
 </div>
 <div id="step-2-pre-process-the-data" class="section level2">
 <h2>Step 2: Pre-process the data</h2>
-<pre class="r"><code># Drop the first 7 columns, which contain meta (e.g., row ID, participant name) and unknown data (e.g., `new_window`?)
+<pre class="r"><code># Drop the first 7 columns, which contain metadata (e.g., row ID, participant name) and unknown data (e.g., `new_window`?)
 pmlTrain &lt;- pmlTrain[, -(1:7)]
 pmlEval &lt;- pmlEval[, -(1:7)]</code></pre>
-<pre class="r"><code># remove any columns which contain only NAs
+<pre class="r"><code># remove columns which contain only NAs
 goodCols &lt;- apply(pmlTrain, 2, function(x) !any(is.na(x)))
 tempTrain &lt;- pmlTrain[, goodCols]
 tempEval &lt;- pmlEval[, goodCols]</code></pre>
 </div>
 <div id="step-3-partition-the-data-into-training-and-testing-datasets" class="section level2">
 <h2>Step 3: Partition the data into training and testing datasets</h2>
-<p>For this, I used a 75-25% split. More data for my algorithm to build on, and a modest amount to test against.</p>
+<p>For this, I used a 75/25% split. More data for my algorithm to build on, and a modest amount to test against.</p>
 <pre class="r"><code>inTrain &lt;- createDataPartition(y = tempTrain$classe, p = .75, list = FALSE)
 
 training &lt;- tempTrain[inTrain, ]
@@ -99,16 +89,16 @@ testing &lt;- tempTrain[-inTrain, ]</code></pre>
 </div>
 <div id="step-4-train-a-random-forest-model" class="section level2">
 <h2>Step 4: Train a Random Forest model</h2>
-<p>The basic random forest is a good unsupervised method, and does a decent, brute-force job of building a predictive model, good qualities for a simple 1-2 page analysis here. Leveraging my multi-core processor, I build 500 forests across 2 cores, to save run time.</p>
-<pre class="r"><code>registerDoParallel()
-
-# Split the `training` data into two sets: the outcome of interest (the known class of motion), and the sensor data
+<p>I train the model, leaving standard defaults for the train() method from the <code>caret</code> package–random forest, bootstrapped (25 resamples)–to let it take care of cross-validation on its own.</p>
+<p><em>(This definitely seems like overkill, and the time it takes to execute appears to show that: ~1.5 hours on a 2013 MacBook Pro. Parallelizing the process may cut times dramatically.)</em></p>
+<pre class="r"><code># Split the `training` data into two sets: the outcome of interest (the known class of motion), and the sensor data
 outcomes &lt;- training$classe
 factors &lt;- training[-ncol(training)]
 
-rf &lt;- foreach(ntree = rep(250, 2), .combine = randomForest::combine, .packages = 'randomForest') %dopar% {
-  randomForest(factors, outcomes, ntree = ntree) 
-}</code></pre>
+rf &lt;- train(factors, outcomes)</code></pre>
+<pre><code>## Loading required package: randomForest
+## randomForest 4.6-10
+## Type rfNews() to see new features/changes/bug fixes.</code></pre>
 </div>
 <div id="step-5-evaluate-the-model" class="section level2">
 <h2>Step 5: Evaluate the model</h2>
@@ -126,27 +116,27 @@ confusionMatrix(predictions, outcomes)</code></pre>
 ##          E    0    0    0    0 2706
 ## 
 ## Overall Statistics
-##                                      
-##                Accuracy : 1          
-##                  95% CI : (0.9997, 1)
-##     No Information Rate : 0.2843     
-##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16  
-##                                      
-##                   Kappa : 1          
-##  Mcnemar's Test P-Value : NA         
+##                                 
+##                Accuracy : 1     
+##                  95% CI : (1, 1)
+##     No Information Rate : 0.284 
+##     P-Value [Acc &gt; NIR] : &lt;2e-16
+##                                 
+##                   Kappa : 1     
+##  Mcnemar's Test P-Value : NA    
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   1.0000   1.0000   1.0000   1.0000
-## Specificity            1.0000   1.0000   1.0000   1.0000   1.0000
-## Pos Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
-## Neg Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
-## Prevalence             0.2843   0.1935   0.1744   0.1639   0.1839
-## Detection Rate         0.2843   0.1935   0.1744   0.1639   0.1839
-## Detection Prevalence   0.2843   0.1935   0.1744   0.1639   0.1839
-## Balanced Accuracy      1.0000   1.0000   1.0000   1.0000   1.0000</code></pre>
-<p>Not surprisingly, it fits the data perfectly (something that should give us pause to consider overfitting).</p>
+## Sensitivity             1.000    1.000    1.000    1.000    1.000
+## Specificity             1.000    1.000    1.000    1.000    1.000
+## Pos Pred Value          1.000    1.000    1.000    1.000    1.000
+## Neg Pred Value          1.000    1.000    1.000    1.000    1.000
+## Prevalence              0.284    0.194    0.174    0.164    0.184
+## Detection Rate          0.284    0.194    0.174    0.164    0.184
+## Detection Prevalence    0.284    0.194    0.174    0.164    0.184
+## Balanced Accuracy       1.000    1.000    1.000    1.000    1.000</code></pre>
+<p>Not surprisingly, with so many opportunities to optimize the model parameters on the training set, the model fits the data perfectly. Saying perfection is an optimistic upper end of the out-of-sample error rate would be putting it mildly.</p>
 <p>And finally, I check the model against the held-out <code>testing</code> sub-dataset:</p>
 <pre class="r"><code>predictions &lt;- predict(rf, newdata = testing)
 confusionMatrix(predictions, testing$classe)</code></pre>
@@ -154,34 +144,34 @@ confusionMatrix(predictions, testing$classe)</code></pre>
 ## 
 ##           Reference
 ## Prediction    A    B    C    D    E
-##          A 1395    1    0    0    0
-##          B    0  947    1    0    0
-##          C    0    1  852   13    0
-##          D    0    0    2  791    5
+##          A 1393    0    0    0    0
+##          B    1  944    2    0    0
+##          C    1    5  851   11    0
+##          D    0    0    2  793    5
 ##          E    0    0    0    0  896
 ## 
 ## Overall Statistics
 ##                                         
-##                Accuracy : 0.9953        
-##                  95% CI : (0.993, 0.997)
-##     No Information Rate : 0.2845        
-##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16     
+##                Accuracy : 0.994         
+##                  95% CI : (0.992, 0.996)
+##     No Information Rate : 0.284         
+##     P-Value [Acc &gt; NIR] : &lt;2e-16        
 ##                                         
-##                   Kappa : 0.9941        
+##                   Kappa : 0.993         
 ##  Mcnemar's Test P-Value : NA            
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: A Class: B Class: C Class: D Class: E
-## Sensitivity            1.0000   0.9979   0.9965   0.9838   0.9945
-## Specificity            0.9997   0.9997   0.9965   0.9983   1.0000
-## Pos Pred Value         0.9993   0.9989   0.9838   0.9912   1.0000
-## Neg Pred Value         1.0000   0.9995   0.9993   0.9968   0.9988
-## Prevalence             0.2845   0.1935   0.1743   0.1639   0.1837
-## Detection Rate         0.2845   0.1931   0.1737   0.1613   0.1827
-## Detection Prevalence   0.2847   0.1933   0.1766   0.1627   0.1827
-## Balanced Accuracy      0.9999   0.9988   0.9965   0.9911   0.9972</code></pre>
-<p>Results are near perfect (Accuracy of 0.9955, giving an incredibly high upper bound to our out-of-sample error rate), something which, again, may warrant a note about its applicability to future data, given the potential for overfitting (i.e., would this apply to a different group of participants?). Nevertheless, for a quick introduction to predictive modeling, it shows the effectiveness of a popular algorithm, and how to execute it in R.</p>
+## Sensitivity             0.999    0.995    0.995    0.986    0.994
+## Specificity             1.000    0.999    0.996    0.998    1.000
+## Pos Pred Value          1.000    0.997    0.980    0.991    1.000
+## Neg Pred Value          0.999    0.999    0.999    0.997    0.999
+## Prevalence              0.284    0.194    0.174    0.164    0.184
+## Detection Rate          0.284    0.192    0.174    0.162    0.183
+## Detection Prevalence    0.284    0.193    0.177    0.163    0.183
+## Balanced Accuracy       0.999    0.997    0.996    0.992    0.997</code></pre>
+<p>This time, results are merely <em>near</em> perfect (Accuracy of 0.994, giving a still incredibly high upper bound for an out-of-sample error rate), something which, again, may warrant a note about its applicability to future data, given the likelihood of overfitting (i.e., would this apply to a different group of participants?). Nevertheless, for a quick introduction to predictive modeling, it shows the effectiveness of a popular algorithm, and how to execute it in R.</p>
 </div>
 </div>
 
